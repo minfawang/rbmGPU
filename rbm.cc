@@ -23,7 +23,12 @@
 
 #define NUM_THREADS 8
 #define BATCH_SIZE (NUM_THREADS * 256)
+
 // TODO: change NUM_MOVIES_PER_BATCH when switching to large data
+// number of movies per batch in mid_data: max = 97527, min = 86203
+// in full data: max = 493495, min = 402065
+#define NUM_MOVIES_PER_BATCH 97527
+
 
 using namespace std;
 
@@ -214,10 +219,8 @@ public:
 		cudaMalloc((void**)&dev_Hts, sizeof(float) * F * BATCH_SIZE);
 
 
-		// setup movies and ratings memory
-		// number of movies per batch: max = 97527, min = 86203
-		const int NUM_MOVIES_PER_BATCH = 97527;
-		
+		// TODO: change NUM_MOVIES_PER_BATCH when switching to large data
+		// set up movies and ratings related data
 		float* dev_Vzeros;
 		float* dev_Vts;
 		float* dev_W_users;
@@ -240,8 +243,6 @@ public:
 
 
 		int *ids;
-
-
 		
 		for (unsigned int iter_num = 0; iter_num < n_iter; iter_num++) {
 			cout << "working on iteration " << iter_num << "..." << endl;
@@ -260,17 +261,11 @@ public:
 
 
 
-
-
-
 			// train
 			int thread_id = 0;
 			int size;
 			int accu_idx = 0;
 			int batch_start = 0;
-
-			// TEST CODE
-			int test_id = 0;
 
 
 			for (auto &user_id : train_vec) {
@@ -281,9 +276,6 @@ public:
 				starts[thread_id] = accu_idx;
 				sizes[thread_id] = size;
 
-				// test_id++;
-				// cout << size << endl;
-
 
 				
 				accu_idx += size;
@@ -292,12 +284,12 @@ public:
 				if (thread_id == BATCH_SIZE) {
 
 
-
 					// copy data from host to device
 					for (int ib = 0; ib < accu_idx; ib++) {
 						record r = train_data.data[batch_start + ib];
 						movies[ib] = r.movie;
 						ratings[ib] = r.score;
+
 					}
 
 					cudaMemcpy(dev_users, users, sizeof(int) * BATCH_SIZE, cudaMemcpyHostToDevice);
@@ -312,11 +304,11 @@ public:
 					cudaMemset(dev_Vts, 0, sizeof(float) * K * accu_idx);
 
 
-					// train batch data
-					train(dev_users, dev_movies, dev_ratings, dev_starts, dev_sizes, 
-						dev_A, dev_B, dev_BV, dev_BH, F, C,
-						dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts, dev_W_users,
-						BATCH_SIZE, CD_K);
+					// // train batch data
+					// train(dev_users, dev_movies, dev_ratings, dev_starts, dev_sizes, 
+					// 	dev_A, dev_B, dev_BV, dev_BH, F, C,
+					// 	dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts, dev_W_users,
+					// 	BATCH_SIZE, CD_K);
 
 
 
@@ -327,7 +319,6 @@ public:
 
 				}
 			}
-
 
 
 
@@ -506,6 +497,10 @@ int main(int argc, char** argv) {
 	string train_file_name = "data/mid_main.data";
 	string test_file_name = "data/mid_prob.data";
 	string qual_file_name = "data/mid_prob.data";
+
+	// string train_file_name = "data/main_data.data";
+	// string test_file_name = "data/prob_data.data";
+	// string qual_file_name = "data/qual_data.data";
 
 	record_array train_data;
 	record_array test_data;
