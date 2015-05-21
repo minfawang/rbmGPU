@@ -20,6 +20,7 @@
 #include "rbm_cuda.cuh"
 
 
+
 #define NUM_THREADS 8
 #define BATCH_SIZE (NUM_THREADS * 256)
 // TODO: change NUM_MOVIES_PER_BATCH when switching to large data
