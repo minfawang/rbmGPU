@@ -304,11 +304,11 @@ public:
 					cudaMemset(dev_Vts, 0, sizeof(float) * K * accu_idx);
 
 
-					// // train batch data
-					// train(dev_users, dev_movies, dev_ratings, dev_starts, dev_sizes, 
-					// 	dev_A, dev_B, dev_BV, dev_BH, F, C,
-					// 	dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts, dev_W_users,
-					// 	BATCH_SIZE, CD_K);
+					// train batch data
+					train(dev_users, dev_movies, dev_ratings, dev_starts, dev_sizes, 
+						dev_A, dev_B, dev_BV, dev_BH, F, C,
+						dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts, dev_W_users,
+						BATCH_SIZE, CD_K);
 
 
 

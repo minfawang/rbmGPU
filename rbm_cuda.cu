@@ -119,25 +119,39 @@ void trainKernel(int* users, int* movies, int* ratings, int* starts, int* sizes,
 	float* Vzeros, float* Vts, float* Hzeros, float* Hts, float* W_users,
 	int batch_size, int CD_K, cublasHandle_t &handle) {
 
+
+	// set up cuBlas multiplication parameters
+	int ldA = K;
+	int ldB = C;
+	int ldW = K;
+	int ldV = K;
+	int ldH = F;
+
+	const float ONE = 1;
+	const float ZERO = 0;
+	const float* pONE = &ONE;
+	const float* pZERO = &ZERO;
+
 	unsigned int index = blockIdx.x * blockDim.x + threadIdx.x;
 	while (index < batch_size) {
 		// TODO: Write me
-		int user = users[index]; // user id
+		// int user = users[index]; // user id
 		int start = starts[index]; // the start index of movies in the batch
 		int size = sizes[index]; // number of movies for this user
 
-		float* H0 = Hzeros + index * F; // dim = F
-		float* Ht = Hts + index * F; // dim = F
+		float* H0 = Hzeros + index * F; // dim = F * 1
+		float* Ht = Hts + index * F; // dim = F * 1
 
 		float* V0 = Vzeros + start * K; // dim = K * size
 		float* Vt = Vts + start * K; // dim = K * size
 
-		float* W_user = W_users + start * K * F;
+		float* W_user = W_users + start * K * F; // dim = K * F * size
 
 
 		// from start to (start + size)
 		int* uMovies = movies + start; // dim = size
 		int* uRatings = ratings + start; // dim = size
+
 		
 
 		// set up V0 and Vt based on the input data.
@@ -145,18 +159,13 @@ void trainKernel(int* users, int* movies, int* ratings, int* starts, int* sizes,
 			V0[i * K + uRatings[i] - 1] = 1;
 			Vt[i * K + uRatings[i] - 1] = 1;
 			
-	
-			int ldA = K;
-			int ldB = C;
-			int ldW = K;
 
-			const float alf = 1;
-			const float bet = 0;
-			const float* alpha = &alf;
-			const float* beta = &bet;
+			// Operation: W_user.slice(i) = A.slice(r.movie) * B;
+			// W_user.slice(i) -> K * F
+			// A.slice(r.movie) -> K * C
+			// B -> C * F
 
-			cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, K, F, C, alpha, A + i * K * C, ldA, B, ldB, beta, W_user + i * K * F, ldW);
-
+			cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, K, F, C, pONE, A + uMovies[i] * K * C, ldA, B, ldB, pZERO, W_user + i * K * F, ldW);
 		}
 
 
@@ -169,11 +178,63 @@ void trainKernel(int* users, int* movies, int* ratings, int* starts, int* sizes,
 		// 	H0 += W_user.slice(i).t() * V0.col(i);
 		// }
 		// H0 = 1.0 / (1 + exp(-H0));
-		for (int j = 0; j < F; j++) {
-			H0[j] = BH[j];
-			for (int i = 0; i < size; i++) {
 
+
+		
+		/*	W_user.slice(i).t() -> (K * F).t()
+			V0.col(i) -> (F * 1)	*/
+
+
+		// for (int j = 0; j < F; j++) {
+		// 	H0[j] = BH[j];
+		// }
+		cublasScopy(handle, F, BH, 1, H0, 1);
+
+		// for (int i = 0; i < size; i++) {
+		// 	cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, F, 1, pONE, W_user + i * K * F, ldW, V0 + i * K, ldV, pONE, H0, ldH);
+		// }
+		cublasSgemmBatched(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, F, 1, pONE, (const float**)&W_user, ldW, (const float**)&V0, ldV, pONE, &H0, ldH, size);
+
+		for (int j = 0; j < F; j++) {
+			H0[j] = 1.0 / (1 + exp(-H0[j]));
+		}
+
+
+		/*
+		/////////////////// Do the contrastive divergence ///////////////////
+		for (int n = 0; n < CD_K; n++) {
+
+			////////////// positive phase: V -> H /////////
+			Ht = BH;
+			for (int i = 0; i < size; i ++) {
+				// Ht += W.slice(ims[i]).t() * Vt.col(i);
+				Ht += W_user.slice(i).t() * Vt.col(i);
 			}
+			Ht = 1.0 / (1 + exp(-Ht));
+			
+
+			// negative phase: H -> V
+			for (int i = 0; i < size; i++) {
+				// Vt.col(i) = exp(BV.col(ims[i]) + W.slice(ims[i]) * Ht);
+				Vt.col(i) = exp(BV.col(ims[i]) + W_user.slice(i) * Ht);
+			}
+
+			// Normalize Vt -> sum_k (Vt(k, i)) = 1
+			Vt = normalise(Vt, 1);
+
+		}
+		*/
+
+		/////////////////// Do the contrastive divergence ///////////////////
+		for (int n = 0; n < CD_K; n++) {
+			////////////// positive phase: V -> H /////////
+			cublasScopy(handle, F, BH, 1, Ht, 1);
+			cublasSgemmBatched(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, F, 1, pONE, (const float**)&W_user, ldW, (const float**)&Vt, ldV, pONE, &Ht, ldH, size);
+			for (int j = 0; j < F; j++) {
+				Ht[j] = 1.0 / (1 + exp(-Ht[j]));
+			}
+
+			// negative phase: H -> V
 		}
 
 
