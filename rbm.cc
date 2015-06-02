@@ -39,17 +39,26 @@
 
 
 
-#define gpuErrChk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code,
-                      const char *file,
-                      int line,
-                      bool abort=true) {
-  if (code != cudaSuccess) {
-    fprintf(stderr,"GPUassert: %s %s %d\n",
-            cudaGetErrorString(code), file, line);
-    exit(code);
-  }
-}
+// #define gpuErrChk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+// inline void gpuAssert(cudaError_t code,
+//                       const char *file,
+//                       int line,
+//                       bool abort=true) {
+//   if (code != cudaSuccess) {
+//     fprintf(stderr,"GPUassert: %s %s %d\n",
+//             cudaGetErrorString(code), file, line);
+//     exit(code);
+//   }
+// }
+
+#define CUDA_CALL(x) do { if((x)!=cudaSuccess) { \
+	printf("Error at %s:%d\n",__FILE__,__LINE__); \
+	exit(EXIT_FAILURE);}} while(0) 
+
+#define CURAND_CALL(x) do { if((x)!=CURAND_STATUS_SUCCESS) { \
+	printf("Error at %s:%d\n",__FILE__,__LINE__); \
+	exit(EXIT_FAILURE);}} while(0)
+
 
 
 
@@ -193,6 +202,10 @@ public:
 		cout << "train: " << train_data.size << "\ttest: " << test_data.size << "\tqual: " << qual_data.size << endl;
 		cout << "users: " << N << "\tmovies: " << M << "\tMAX_NUM_MOVIES_IN_BATCH: " << MAX_NUM_MOVIES_IN_BATCH << endl;
 
+		// The even out on M is because of the bug on Nvidia Curand function
+		M = (M + 1) / 2 * 2;
+		cout << "after evening out, M = " << M << endl;
+
 		C = 10;
 		CD_K = 1;
 
@@ -218,8 +231,8 @@ public:
 		cudaMalloc(&dev_BH, sizeof(float) * F);
 
 		curandGenerateNormal(gen, dev_W, K * F * M, mean, std_dev);
-		curandGenerateNormal(gen, dev_BH, F, mean, std_dev);
 		curandGenerateNormal(gen, dev_BV, K * M, mean, std_dev);
+		curandGenerateNormal(gen, dev_BH, F, mean, std_dev);
 
 
 
@@ -229,15 +242,15 @@ public:
 
 
 
-		// TEST CODE
-		float* BV = new float[K * M];
-		cudaMemcpy(BV, dev_BV, sizeof(float) * K * M, cudaMemcpyDeviceToHost);
-		for (unsigned int i = 150; i < 160; i++) {
-			cout << BV[i] << " ";
-		}
-		cout << endl;
-		delete[] BV;
-		cout << "finish pre-processing" << endl;
+		// // TEST CODE
+		// float* BV = new float[K * M];
+		// cudaMemcpy(BV, dev_BV, sizeof(float) * K * M, cudaMemcpyDeviceToHost);
+		// for (unsigned int i = 150; i < 160; i++) {
+		// 	cout << BV[i] << " ";
+		// }
+		// cout << endl;
+		// delete[] BV;
+		// cout << "finish pre-processing" << endl;
 	}
 
 	~RBM() {
