@@ -141,23 +141,21 @@ public:
 	}
 };
 
-// float RMSE(const record_array & test_data, const float* & prediction) {
-// 	double s = 0;
-// 	for (int i = 0; i < test_data.size; i++) {
-// 		s += (test_data[i].score - prediction[i]) * (test_data[i].score - prediction[i]);
-// 	}
-// 	return sqrt(s / test_data.size);
-// }
+float RMSE(const int* test_ratings, const float* predictions, const int test_data_size) {
+	float s = 0;
+	for (int i = 0; i < test_data_size; i++) {
+		s += (test_ratings[i] - predictions[i]) * (test_ratings[i] - predictions[i]);
+	}
+	return sqrt(s / test_data_size);
+}
 
 
 
 
 class RBM {
 public:
-	unsigned int C;
 	unsigned int N;
 	unsigned int M;
-	// unsigned int F;
 	unsigned int CD_K;
 	float lrate; // learning rate
 	float lrate_BH;
@@ -175,15 +173,32 @@ public:
 	float* dev_BV_inc;
 	float* dev_BH_inc;
 
+	// allocate memory for V0, Vt, H0, Ht ...
+	float* dev_Vzeros;
+	float* dev_Vts;
+	float* dev_Hzeros;
+	float* dev_Hts;
+
+
 	float* dev_results; // num_records
 
 	int* train_movies;
 	int* train_ratings;
 
+	int* test_movies;
+	int* test_ratings;
+	int test_data_size;
+
 	unsigned int MAX_NUM_MOVIES_IN_BATCH;
 	curandGenerator_t gen;
 
 	RBM(string train_file_name, string test_file_name, string qual_file_name) {
+
+		CD_K = 1;
+		// lrate = 0.1 * M / train_data.size;
+		lrate = 0.001;
+		lrate_BH = lrate / BATCH_SIZE;
+
 
 		record_array train_data;
 		record_array test_data;
@@ -195,6 +210,7 @@ public:
 		cout << "finish loading " << qual_file_name << endl;
 
 
+		// Setting up train movies & ratings & N & M
 		train_movies = new int[train_data.size];
 		train_ratings = new int[train_data.size];
 
@@ -202,15 +218,22 @@ public:
 		cout << "train: " << train_data.size << "\ttest: " << test_data.size << "\tqual: " << qual_data.size << endl;
 		cout << "users: " << N << "\tmovies: " << M << "\tMAX_NUM_MOVIES_IN_BATCH: " << MAX_NUM_MOVIES_IN_BATCH << endl;
 
+		// Setting up test movies & ratings & N & M
+		unsigned int tmp1, tmp2, tmpMax;
+		test_movies = new int[test_data.size];
+		test_ratings = new int[test_data.size];
+		test_data_size = test_data.size;
+		setNumUserMovieOthers(test_data, &tmp1, &tmp2, &tmpMax, test_movies, test_ratings);
+		MAX_NUM_MOVIES_IN_BATCH = max(MAX_NUM_MOVIES_IN_BATCH, tmpMax);
+
+
+
+
+
 		// The even out on M is because of the bug on Nvidia Curand function
 		M = (M + 1) / 2 * 2;
 		cout << "after evening out, M = " << M << endl;
 
-		C = 10;
-		CD_K = 1;
-
-		lrate = 0.01 * M / train_data.size;
-		lrate_BH = lrate / BATCH_SIZE;
 
 
 		train_vec = make_pre_vec(train_data, N);
@@ -222,7 +245,7 @@ public:
 
 		// Create a pseudo-random number generator
 		const float mean = 0.0;
-		const float std_dev = 0.1;
+		const float std_dev = 0.08;
 		curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT);
 		curandSetPseudoRandomGeneratorSeed(gen, (unsigned long long) clock());
 
@@ -234,23 +257,17 @@ public:
 		curandGenerateNormal(gen, dev_BV, K * M, mean, std_dev);
 		curandGenerateNormal(gen, dev_BH, F, mean, std_dev);
 
-
-
 		cudaMalloc(&dev_W_inc, sizeof(float) * K * F * M);
 		cudaMalloc(&dev_BV_inc, sizeof(float) * K * M);
 		cudaMalloc(&dev_BH_inc, sizeof(float) * F * BATCH_SIZE);
 
 
+		cudaMalloc(&dev_Vzeros, sizeof(float) * K * MAX_NUM_MOVIES_IN_BATCH);
+		cudaMalloc(&dev_Vts, sizeof(float) * K * MAX_NUM_MOVIES_IN_BATCH);
+		cudaMalloc(&dev_Hzeros, sizeof(float) * F * BATCH_SIZE);
+		cudaMalloc(&dev_Hts, sizeof(float) * F * BATCH_SIZE);
 
-		// // TEST CODE
-		// float* BV = new float[K * M];
-		// cudaMemcpy(BV, dev_BV, sizeof(float) * K * M, cudaMemcpyDeviceToHost);
-		// for (unsigned int i = 150; i < 160; i++) {
-		// 	cout << BV[i] << " ";
-		// }
-		// cout << endl;
-		// delete[] BV;
-		// cout << "finish pre-processing" << endl;
+		cout << "finish pre-processing" << endl;
 	}
 
 	~RBM() {
@@ -268,12 +285,19 @@ public:
 		cudaFree(dev_BV_inc);
 		cudaFree(dev_BH_inc);
 
+		cudaFree(dev_Vzeros);
+		cudaFree(dev_Vts);
+		cudaFree(dev_Hzeros);
+		cudaFree(dev_Hts);
+
 		
-		// TODO: uncomment below
-		// cudaFree(dev_results);
+		cudaFree(dev_results);
 
 		delete[] train_movies;
 		delete[] train_ratings;
+
+		delete[] test_movies;
+		delete[] test_ratings;
 
 		curandDestroyGenerator(gen);
 
@@ -283,10 +307,14 @@ public:
 
 
 		// TEST CODE Memory Allocation Area
-		float* BV_inc = new float[K * M];
-		float* BH_inc = new float[F * BATCH_SIZE];
-		float* V = new float[K * MAX_NUM_MOVIES_IN_BATCH];
-		float* H = new float[F * BATCH_SIZE];
+		float* results = new float[test_data_size];
+		float* W = new float[10];
+		float* BV = new float[10];
+		float* BH = new float[10];
+		// float* BV_inc = new float[K * M];
+		// float* BH_inc = new float[F * BATCH_SIZE];
+		// float* V = new float[K * MAX_NUM_MOVIES_IN_BATCH];
+		// float* H = new float[F * BATCH_SIZE];
 
 
 
@@ -295,120 +323,375 @@ public:
 		int* dev_movies_in_batch;
 		int* dev_ratings_in_batch;
 
+
+
 		cudaMalloc(&dev_train_vec_in_batch, sizeof(int) * 2 * BATCH_SIZE);
 		cudaMalloc(&dev_movies_in_batch, sizeof(int) * MAX_NUM_MOVIES_IN_BATCH);
 		cudaMalloc(&dev_ratings_in_batch, sizeof(int) * MAX_NUM_MOVIES_IN_BATCH);
 
 
-		// allocate memory for V0, Vt, H0, Ht ...
-		float* dev_Vzeros;
-		float* dev_Vts;
-		float* dev_Hzeros;
-		float* dev_Hts;
-
-		cudaMalloc(&dev_Vzeros, sizeof(float) * K * MAX_NUM_MOVIES_IN_BATCH);
-		cudaMalloc(&dev_Vts, sizeof(float) * K * MAX_NUM_MOVIES_IN_BATCH);
-		cudaMalloc(&dev_Hzeros, sizeof(float) * F * BATCH_SIZE);
-		cudaMalloc(&dev_Hts, sizeof(float) * F * BATCH_SIZE);
 
 
-
-		for (unsigned int iv = 0; iv < N; iv += BATCH_SIZE) {
-			// if (iv % 3 == 0)
-			// 	cout << "." << flush;
+		cudaMalloc(&dev_results, sizeof(float) * test_data_size);
 
 
-			int batch_size = min((unsigned int) BATCH_SIZE, N - iv);
-			int i_batch_start = train_vec[2 * iv];
-			int i_batch_end = train_vec[2 * (iv + batch_size) - 1];
-			int num_movies_in_this_batch = i_batch_end - i_batch_start;
-
-
-			cudaMemset(dev_W_inc, 0, sizeof(float) * K * F * M);
-			cudaMemset(dev_BV_inc, 0, sizeof(float) * K * M);
-			cudaMemset(dev_BH_inc, 0, sizeof(float) * F * BATCH_SIZE);
-
-
-			cudaMemcpy(dev_train_vec_in_batch, train_vec + 2 * iv, sizeof(int) * 2 * batch_size, cudaMemcpyHostToDevice);
-			cudaMemcpy(dev_movies_in_batch, train_movies + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
-			cudaMemcpy(dev_ratings_in_batch, train_ratings + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
-
-
-			cudaMemset(dev_Vzeros, 0, sizeof(float) * K * num_movies_in_this_batch);
-			cudaMemset(dev_Vts, 0, sizeof(float) * K * num_movies_in_this_batch);
-			cudaMemset(dev_Hzeros, 0, sizeof(float) * F * batch_size);
-			cudaMemset(dev_Hts, 0, sizeof(float) * F * batch_size);
-			// cudaMemcpy(dev_Vts, dev_BV, sizeof(float) * K * num_movies_in_this_batch, cudaMemcpyHostToDevice);
-			// cudaMemcpy(dev_Hzeros, dev_BH, sizeof(float) * F * batch_size, cudaMemcpyHostToDevice);
-			// cudaMemcpy(dev_Hts, dev_BH, sizeof(float) * F * batch_size, cudaMemcpyHostToDevice);
-
-
-			// user, movie, rating
-			// train_vec -> start, end
-			// W, BH, BV
-			// W_inc, BH_inc, BV_inc
-			int blocks = min(maxBlocks, (int) ceil(
-				batch_size / (float)threadsPerBlock));
-
-
-
-			train(dev_train_vec_in_batch, dev_movies_in_batch, dev_ratings_in_batch,
-				dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts,
-				dev_W, dev_BV, dev_BH, dev_W_inc, dev_BV_inc, dev_BH_inc,
-				batch_size, num_movies_in_this_batch, i_batch_start, 
-				M, lrate, lrate_BH,
-				blocks, threadsPerBlock);
+		int* dev_test_vec_in_batch;
+		int* dev_test_movies_in_batch;
+		int* dev_test_ratings_in_batch;
+		cudaMalloc(&dev_test_vec_in_batch, sizeof(int) * 2 * BATCH_SIZE);
+		cudaMalloc(&dev_test_movies_in_batch, sizeof(int) * MAX_NUM_MOVIES_IN_BATCH);
+		cudaMalloc(&dev_test_ratings_in_batch, sizeof(int) * MAX_NUM_MOVIES_IN_BATCH);
 
 
 
 
-			// TEST CODE: verify BV_inc
-			// cout << "movies in batch = " << num_movies_in_this_batch << endl;
 
-			// cudaMemcpy(H, dev_Hzeros, sizeof(float) * F * batch_size, cudaMemcpyDeviceToHost);
-			// for (unsigned int i = F * 100; i < F * 101; i++) {
-			// 	cout << H[i] << " ";
-			// }
-			// cout << endl;
-			// cudaMemcpy(V, dev_Vts, sizeof(float) * K * num_movies_in_this_batch, cudaMemcpyDeviceToHost);
-			// for (unsigned int i = K * 100; i < K * 110; i++) {
-			// 	cout << V[i] << " ";
-			// }
-			// cout << endl;
-			// cudaMemcpy(BH_inc, dev_BH_inc, sizeof(float) * F * batch_size, cudaMemcpyDeviceToHost);
-			// for (unsigned int i = F * 100; i < F * 101; i++) {
-			// 	cout << BH_inc[i] << " ";
-			// }
-			// cout << endl;
-			cudaMemcpy(BV_inc, dev_BV_inc, sizeof(float) * K * M, cudaMemcpyDeviceToHost);
-			for (unsigned int i = K * 110; i < K * 112; i++) {
-				cout << BV_inc[i] << " ";
+
+
+
+		for (unsigned int iter_num = 0; iter_num < n_iter; iter_num++) {
+
+			// // make prediction
+
+			for (unsigned int iv = 0; iv < N; iv += BATCH_SIZE) {
+				int batch_size = min((unsigned int) BATCH_SIZE, N - iv);
+
+				// For train
+				int i_batch_start = train_vec[2 * iv];
+				int i_batch_end = train_vec[2 * (iv + batch_size) - 1];
+				int num_movies_in_this_batch = i_batch_end - i_batch_start;
+
+				// For test
+				int i_test_batch_start = test_vec[2 * iv];
+				int i_test_batch_end = test_vec[2 * (iv + batch_size) - 1];
+				int num_test_movies_in_this_batch = i_test_batch_end - i_test_batch_start;
+
+				cudaMemcpy(dev_train_vec_in_batch, train_vec + 2 * iv, sizeof(int) * 2 * batch_size, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_movies_in_batch, train_movies + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_ratings_in_batch, train_ratings + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+
+				cudaMemcpy(dev_test_vec_in_batch, test_vec + 2 * iv, sizeof(int) * 2 * batch_size, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_test_movies_in_batch, test_movies + i_test_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_test_ratings_in_batch, test_ratings + i_test_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+
+
+
+				cudaMemset(dev_Vzeros, 0, sizeof(float) * K * num_movies_in_this_batch);
+				cudaMemset(dev_Hzeros, 0, sizeof(float) * F * batch_size);
+
+				cudaMemset(dev_Vts, 0, sizeof(float) * K * num_test_movies_in_this_batch);
+				cudaMemset(dev_Hts, 0, sizeof(float) * F * batch_size);
+
+
+
+				int blocks = min(maxBlocks, (int) ceil(
+					batch_size / (float)threadsPerBlock));
+
+				float* dev_results_in_batch = dev_results + i_test_batch_start;
+
+				train(dev_train_vec_in_batch, dev_movies_in_batch, dev_ratings_in_batch,
+					dev_test_vec_in_batch, dev_test_movies_in_batch, dev_test_ratings_in_batch,
+					dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts,
+					dev_W, dev_BV, dev_BH, dev_W_inc, dev_BV_inc, dev_BH_inc,
+					batch_size, num_movies_in_this_batch, i_batch_start,
+					num_test_movies_in_this_batch, i_test_batch_start,
+					M, lrate, lrate_BH,
+					dev_results_in_batch, false,
+					blocks, threadsPerBlock);
+
+
 			}
-			cout << endl;
+
+			// TEST RMSE:
+			cudaMemcpy(results, dev_results, sizeof(float) * test_data_size, cudaMemcpyDeviceToHost);
+			float rmse = RMSE(test_ratings, results, test_data_size);
+			cout << "RMSE = " << rmse << endl;
 
 
-			// TODO: implement the kernel code to update W, BV, BH
+
+
+
+
+			// update weights
+
+			for (unsigned int iv = 0; iv < N; iv += BATCH_SIZE) {
+				// if (iv % 3 == 0)
+				// 	cout << "." << flush;
+
+
+				int batch_size = min((unsigned int) BATCH_SIZE, N - iv);
+				int i_batch_start = train_vec[2 * iv];
+				int i_batch_end = train_vec[2 * (iv + batch_size) - 1];
+				int num_movies_in_this_batch = i_batch_end - i_batch_start;
+
+
+				cudaMemset(dev_W_inc, 0, sizeof(float) * K * F * M);
+				cudaMemset(dev_BV_inc, 0, sizeof(float) * K * M);
+				cudaMemset(dev_BH_inc, 0, sizeof(float) * F * BATCH_SIZE);
+
+
+				cudaMemcpy(dev_train_vec_in_batch, train_vec + 2 * iv, sizeof(int) * 2 * batch_size, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_movies_in_batch, train_movies + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+				cudaMemcpy(dev_ratings_in_batch, train_ratings + i_batch_start, sizeof(int) * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+
+
+				cudaMemset(dev_Vzeros, 0, sizeof(float) * K * num_movies_in_this_batch);
+				cudaMemset(dev_Vts, 0, sizeof(float) * K * num_movies_in_this_batch);
+				cudaMemset(dev_Hzeros, 0, sizeof(float) * F * batch_size);
+				cudaMemset(dev_Hts, 0, sizeof(float) * F * batch_size);
+				// cudaMemcpy(dev_Vts, dev_BV, sizeof(float) * K * num_movies_in_this_batch, cudaMemcpyHostToDevice);
+				// cudaMemcpy(dev_Hzeros, dev_BH, sizeof(float) * F * batch_size, cudaMemcpyHostToDevice);
+				// cudaMemcpy(dev_Hts, dev_BH, sizeof(float) * F * batch_size, cudaMemcpyHostToDevice);
+
+
+				// user, movie, rating
+				// train_vec -> start, end
+				// W, BH, BV
+				// W_inc, BH_inc, BV_inc
+				int blocks = min(maxBlocks, (int) ceil(
+					batch_size / (float)threadsPerBlock));
+
+
+
+				train(dev_train_vec_in_batch, dev_movies_in_batch, dev_ratings_in_batch,
+					NULL, NULL, NULL,
+					dev_Vzeros, dev_Vts, dev_Hzeros, dev_Hts,
+					dev_W, dev_BV, dev_BH, dev_W_inc, dev_BV_inc, dev_BH_inc,
+					batch_size, num_movies_in_this_batch, i_batch_start, 
+					0, 0,
+					M, lrate, lrate_BH,
+					NULL, true,
+					blocks, threadsPerBlock);
+
+
+
+
+				// TEST CODE: verify BV_inc
+				if (iv % 5 == 0) {
+					// cout << "movies in batch = " << num_movies_in_this_batch << endl;
+
+					// cudaMemcpy(H, dev_Hzeros, sizeof(float) * F * batch_size, cudaMemcpyDeviceToHost);
+					// for (unsigned int i = F * 100; i < F * 101; i++) {
+					// 	cout << H[i] << " ";
+					// }
+					// cout << endl;
+					// cudaMemcpy(V, dev_Vts, sizeof(float) * K * num_movies_in_this_batch, cudaMemcpyDeviceToHost);
+					// for (unsigned int i = K * 100; i < K * 110; i++) {
+					// 	cout << V[i] << " ";
+					// }
+					// cout << endl;
+					// cudaMemcpy(BH_inc, dev_BH_inc, sizeof(float) * F * batch_size, cudaMemcpyDeviceToHost);
+					// for (unsigned int i = F * 100; i < F * 101; i++) {
+					// 	cout << BH_inc[i] << " ";
+					// }
+					// cout << endl;
+					// cout << "Test part of BV_inc: " << endl;
+					// cudaMemcpy(BV_inc, dev_BV_inc, sizeof(float) * K * M, cudaMemcpyDeviceToHost);
+					// for (unsigned int i = K * 110; i < K * 112; i++) {
+					// 	cout << BV_inc[i] << " ";
+					// }
+					// cout << endl;
+					cout << "Test part: " << endl;
+					cudaMemcpy(BV, dev_BV + 280, sizeof(float) * 10, cudaMemcpyDeviceToHost);
+					for (unsigned int i = 0; i < 10; i++) {
+						cout << BV[i] << " ";
+					}
+					cout << endl;
+					
+					cudaMemcpy(W, dev_W + 280, sizeof(float) * 10, cudaMemcpyDeviceToHost);
+					for (unsigned int i = 0; i < 10; i++) {
+						cout << W[i] << " ";
+					}
+					cout << endl;
+					
+					cudaMemcpy(BH, dev_BH + 20, sizeof(float) * 10, cudaMemcpyDeviceToHost);
+					for (unsigned int i = 0; i < 10; i++) {
+						cout << BH[i] << " ";
+					}
+					cout << endl;
+				}
+			}
+
+
+
 		}
 
 
 		// TEST CODE memory release area
-		delete[] BV_inc;
-		delete[] BH_inc;
-		delete[] V;
-		delete[] H;
+		delete[] results;
+		delete[] W;
+		delete[] BV;
+		delete[] BH;
+		// delete[] BV_inc;
+		// delete[] BH_inc;
+		// delete[] V;
+		// delete[] H;
 
 
 		cudaFree(dev_train_vec_in_batch);
 		cudaFree(dev_movies_in_batch);
 		cudaFree(dev_ratings_in_batch);
 
+		cudaFree(dev_test_vec_in_batch);
+		cudaFree(dev_test_movies_in_batch);
+		cudaFree(dev_test_ratings_in_batch);
 
-		cudaFree(dev_Vzeros);
-		cudaFree(dev_Vts);
-		cudaFree(dev_Hzeros);
-		cudaFree(dev_Hts);
+	}
 
 
+	void setNumUserMovieOthers(const record_array &rcd_array, unsigned int* ptr_N, unsigned int* ptr_M, unsigned int* ptr_MAX_NUM_MOVIES_IN_BATCH, int* movies, int* ratings) {
+		set<int> movies_set;
+		set<int> users_set;
+
+		unsigned int cur_user = rcd_array.data[0].user;
+		int num_users = 0;
+		int num_movies_in_this_batch = 0;
+
+		int batch_num = 1;
+		*ptr_MAX_NUM_MOVIES_IN_BATCH = 0;
+
+		for (int i = 0; i < rcd_array.size; i++) {
+			record r = rcd_array.data[i];
+			if (movies_set.find(r.movie) == movies_set.end()) {
+				movies_set.insert(r.movie);
+			}
+
+			if (users_set.find(r.user) == users_set.end()) {
+				users_set.insert(r.user);
+			}
+
+			if (r.user != cur_user) {
+				cur_user = r.user;
+				num_users++;
+				// if (num_users % BATCH_SIZE == 0) {
+				// 	*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
+				// 	num_movies_in_this_batch = 0;
+				// }
+			}
+
+			movies[i] = r.movie - 1;
+			ratings[i] = r.score;
+
+			if ((int)cur_user > batch_num * BATCH_SIZE) {
+				*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
+				num_movies_in_this_batch = 0;
+
+				batch_num++;
+			}
+			num_movies_in_this_batch++;
+		}
+
+		*ptr_N = users_set.size();
+		*ptr_M = movies_set.size();
+		*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
+	}
+
+
+	int* make_pre_vec(const record_array &rcd_array, int N) {
+		int* rcd_vec = new int[2 * N];
+
+		int user_id = rcd_array.data[0].user - 1;
+		int start = 0;
+		int end = 0;
+
+		for (int vec_idx = 0; vec_idx < N; vec_idx++) {
+			rcd_vec[2 * vec_idx] = start;
+
+			while ((user_id == vec_idx) && (end < rcd_array.size)) {
+				end++;
+				user_id = rcd_array.data[end].user - 1;
+			}
+
+			rcd_vec[2 * vec_idx + 1] = end;
+
+			start = end;
+		}
+
+		return rcd_vec;
+	}
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int main(int argc, char** argv) {
+
+	unsigned int ITER_NUM = 20;
+
+	string train_file_name = "data/mid_main.data";
+	string test_file_name = "data/mid_prob.data";
+	string qual_file_name = "data/mid_prob.data";
+
+	// string train_file_name = "data/main_data.data";
+	// string test_file_name = "data/prob_data.data";
+	// string qual_file_name = "data/qual_data.data";
+
+
+	RBM rbm(train_file_name, test_file_name, qual_file_name);
+	rbm.fit(ITER_NUM);
+
+
+
+	if (argc == 2) {
+	ifstream ifs(argv[1]);
+	// stringstream buffer;
+	// buffer << ifs.rdbuf();
+	// cluster(buffer, k, batch_size);
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		/* Old version implementation */
 
 
 		// // generate copy of B in order to do update
@@ -597,140 +880,5 @@ public:
 		// cudaFree(dev_Vzeros);
 		// cudaFree(dev_Vts);
 		// cudaFree(dev_W_users);
-
-
-
-	}
-
-
-
-
-
-	void setNumUserMovieOthers(const record_array &rcd_array, unsigned int* ptr_N, unsigned int* ptr_M, unsigned int* ptr_MAX_NUM_MOVIES_IN_BATCH, int* movies, int* ratings) {
-		set<int> movies_set;
-		set<int> users_set;
-
-		unsigned int cur_user = rcd_array.data[0].user;
-		int num_users = 0;
-		int num_movies_in_this_batch = 0;
-
-		int batch_num = 1;
-		*ptr_MAX_NUM_MOVIES_IN_BATCH = 0;
-
-		for (int i = 0; i < rcd_array.size; i++) {
-			record r = rcd_array.data[i];
-			if (movies_set.find(r.movie) == movies_set.end()) {
-				movies_set.insert(r.movie);
-			}
-
-			if (users_set.find(r.user) == users_set.end()) {
-				users_set.insert(r.user);
-			}
-
-			if (r.user != cur_user) {
-				cur_user = r.user;
-				num_users++;
-				// if (num_users % BATCH_SIZE == 0) {
-				// 	*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
-				// 	num_movies_in_this_batch = 0;
-				// }
-			}
-
-			train_movies[i] = r.movie - 1;
-			train_ratings[i] = r.score;
-
-			if ((int)cur_user > batch_num * BATCH_SIZE) {
-				*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
-				num_movies_in_this_batch = 0;
-
-				batch_num++;
-			}
-			num_movies_in_this_batch++;
-		}
-
-		*ptr_N = users_set.size();
-		*ptr_M = movies_set.size();
-		*ptr_MAX_NUM_MOVIES_IN_BATCH = max(*ptr_MAX_NUM_MOVIES_IN_BATCH, (unsigned int)num_movies_in_this_batch);
-	}
-
-
-	int* make_pre_vec(const record_array &rcd_array, int N) {
-		int* rcd_vec = new int[2 * N];
-
-		int user_id = rcd_array.data[0].user - 1;
-		int start = 0;
-		int end = 0;
-
-		for (int vec_idx = 0; vec_idx < N; vec_idx++) {
-			rcd_vec[2 * vec_idx] = start;
-
-			while ((user_id == vec_idx) && (end < rcd_array.size)) {
-				end++;
-				user_id = rcd_array.data[end].user - 1;
-			}
-
-			rcd_vec[2 * vec_idx + 1] = end;
-
-			start = end;
-		}
-
-		return rcd_vec;
-	}
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-int main(int argc, char** argv) {
-
-	unsigned int ITER_NUM = 3;
-
-	string train_file_name = "data/mid_main.data";
-	string test_file_name = "data/mid_prob.data";
-	string qual_file_name = "data/mid_prob.data";
-
-	// string train_file_name = "data/main_data.data";
-	// string test_file_name = "data/prob_data.data";
-	// string qual_file_name = "data/qual_data.data";
-
-
-	RBM rbm(train_file_name, test_file_name, qual_file_name);
-
-	rbm.fit(ITER_NUM);
-
-
-
-
-	if (argc == 2) {
-	ifstream ifs(argv[1]);
-	// stringstream buffer;
-	// buffer << ifs.rdbuf();
-	// cluster(buffer, k, batch_size);
-	}
-}
-
-
 
 
