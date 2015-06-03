@@ -14,7 +14,7 @@ The RBM is essentially a one layer neural network with an extra biased unit. It 
 
 The project could be baiscally divided into three blocks: `contrastive divergence on training`, `weights updates` and `predict results `.
 
-#### Contrastive Divergence
+**Contrastive Divergence**
 
 As stated in the background section, I basically treat every user as a unit, and train them independently in different threads. Because of the memory limitation, I preprocessed the original data into batches and applied the kernel to batches sequentially.
 
@@ -38,7 +38,7 @@ The fourth line of arguments are the batch-specific information.
 
 The final argument is a boolean to choose whether update weights or not. It's useful because I used the partial of this training kernel in the prediction stage and in that case this flag will set to be false.
 
-#### Weights Update
+**Weights Update**
 
 After the contrastive diverngence of a batch, we need to update the weights. There are three majory components needs to update: **W** (weight matrix), **BV** (bias on visible units) and **BH** (bias on hidden units). I wrote seperate kernels to update them. 
 
@@ -111,7 +111,7 @@ for (int j = 0; j < F; j++) {
 ~~~
 
 
-#### Predict Results
+**Predict Results**
 
 The last part of the code is to predict results. Unlike a lot of other algorithms, the prediction stage of RBM is by no means trivial. 
 It requires almost the positive phase of contrastive divergence applied to the training data as stated above, and then the negative phase of contrastive divergence applied to the testing data.
@@ -130,7 +130,7 @@ Most arguments here have the similar meaning as the train kernel arguments. The 
 
 ### Results
 
-#### Speed
+**Speed**
 
 The data that I used for benchmark is a subset of Netflix dataset, which contains around 92,000 user, 3,553 movies and a total of 4,150,000 data points. For GPU, I set the batch size to be 131,072 and hence 131 thousand models will be trained simultaneously.
 
@@ -163,7 +163,7 @@ CPU            | 1671.64           | 100
 
 It improves the speed from CPU, but the speed-up is not that impressive as expected. I think the major reason is that even though the users can be trained independently, the training process for each one is computationally heavy. The GPU has characteristics of high throughput, but also high latency. So while GPU takes advantage of parallelization, its speed is caught up by CPU because of the slowness in doing massive serialized computation within a thread.
 
-#### Prediction Accuracy
+**Prediction Accuracy**
 
 The best model trained on GPU has 120 features, and after trained with 40 iterations, it achieved a RMSE of 0.907, which is 4.6% above water. This result matches decently with the result of the paper by Hinton. 
 
