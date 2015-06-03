@@ -1,5 +1,6 @@
 test*
 data
+*.sh
 
 # Compiled Object files
 *.slo
