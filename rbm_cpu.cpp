@@ -653,7 +653,7 @@ int main () {
 	RBM rbm(train_data, test_data, qual_data);
 
 
-	unsigned int NUM_ITERS = 10;
+	unsigned int NUM_ITERS = 5;
 	rbm.fit(train_data, NUM_ITERS);
 
 

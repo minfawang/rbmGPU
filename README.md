@@ -143,25 +143,23 @@ Machine: CMS MX
 * Peak Memory Bandwidth (GB/s): 288.384000
 * Total Memory (bytes): 3,220,897,792
 
-Averaged time spent per iteration in **training**:
+Averaged time spent (in milliseconds) per iteration in **training** (the shorter the better):
 
-Process        | Elapsed Time (ms) | Features
--------------  | ----------------- | -----
-GPU            | 676.627           | 10
-GPU            | 8958.46           | 100
-CPU            | 2025.65           | 10
-CPU            | 11020.4           | 100
+![Image of data widget](https://plot.ly/~voiceup/29.png)
 
-Averaged time spent per iteration in **predicting**:
-	
-Process        | Elapsed Time (ms) | Features
--------------  | ----------------- | -----
-GPU            | 141.693           | 10
-GPU            | 1549.11           | 100
-CPU            | 293.042           | 10
-CPU            | 1671.64           | 100
+Averaged time spent (in milliseconds) per iteration in **predicting** (the shorter the better):
 
-It improves the speed from CPU, but the speed-up is not that impressive as expected. I think the major reason is that even though the users can be trained independently, the training process for each one is computationally heavy. The GPU has characteristics of high throughput, but also high latency. So while GPU takes advantage of parallelization, its speed is caught up by CPU because of the slowness in doing massive serialized computation within a thread.
+![Image of data widget](https://plot.ly/~voiceup/28.png)
+
+It improves the speed from CPU in most cases, but the speed-up is not that impressive as expected. I think the major reason is that even though the users can be trained independently, the training process for each one is computationally heavy. The GPU has characteristics of high throughput, but also high latency. So while GPU takes advantage of parallelization, its speed is caught up by CPU because of the slowness in doing massive serialized computation within a thread.
+
+Also, notice that when the number of features increases, the CPU actually catches up the GPU. This looks strange in first glance, but after thinking about it meticulously, it actually makes sense. The parallelization is for users, not on the training on a single model. So when number of features increases, the computational cost increases for a single thread and hence CPU will perform better in the environment of intensive serialized computations.
+
+Below are the links to the interactive plots of performance comparison between CPU and GPU with more details:
+
+[Comparison -- Training Time](https://plot.ly/~voiceup/29/performance-comparison-on-prediction-time/)
+
+[Comparison -- Predicting Time](https://plot.ly/~voiceup/28/performance-comparison-on-prediction-time/)
 
 **Prediction Accuracy**
 

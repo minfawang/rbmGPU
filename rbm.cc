@@ -23,7 +23,7 @@
 
 
 
-#define BATCH_SIZE (16 * 512)
+#define BATCH_SIZE (256 * 512)
 
 #define maxBlocks 256
 #define threadsPerBlock 512
@@ -214,7 +214,7 @@ public:
 
 		CD_K = 1;
 		// lrate = 0.001;
-		lrate = 0.1 * M / train_data.size;
+		lrate = 0.001 * M / train_data.size;
 		lrate_BH = lrate / BATCH_SIZE;
 
 
@@ -667,7 +667,7 @@ public:
 
 int main(int argc, char** argv) {
 
-	unsigned int ITER_NUM = 40;
+	unsigned int ITER_NUM = 5;
 
 	string train_file_name = "data/mid_main.data";
 	string test_file_name = "data/mid_prob.data";
