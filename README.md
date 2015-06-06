@@ -158,12 +158,15 @@ Also, notice that when the number of features increases, the CPU actually catche
 Below are the links to the interactive plots of performance comparison between CPU and GPU with more details:
 
 [Comparison -- Training Time](https://plot.ly/~voiceup/29/performance-comparison-on-prediction-time/)
-
-[Comparison -- Predicting Time](https://plot.ly/~voiceup/28/performance-comparison-on-prediction-time/)
+, [Comparison -- Predicting Time](https://plot.ly/~voiceup/28/performance-comparison-on-prediction-time/)
 
 **Prediction Accuracy**
 
-The best model trained on GPU has 120 features, and after trained with 40 iterations, it achieved a RMSE of 0.907, which is 4.6% above water. This result matches decently with the result of the paper by Hinton. 
+The best model trained on GPU has 120 features, and after trained with 40 iterations, it achieved a RMSE of 0.907, which is 4.6% above water.  Unfortunately the parameters that achieved that RMSE was not recorded. Normally the model could achieve a RMSE of around 0.92 easily. The results match decently with the result of the paper by Hinton. 
+
+Below is a plot to show the convergence of minimizing root mean squared error (RMSE). The convergence rate is very fast, and the accuracy is very resonable.
+
+![Image of data widget](https://lh3.googleusercontent.com/14cqrBvx3qrv_2hYUD_WipxQ1AOD6LNf-Cr6G3ICMr4=w800-h550-no)
 
 ### Usage
 

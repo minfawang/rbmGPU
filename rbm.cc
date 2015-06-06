@@ -23,7 +23,7 @@
 
 
 
-#define BATCH_SIZE (256 * 512)
+#define BATCH_SIZE (16 * 512)
 
 #define maxBlocks 256
 #define threadsPerBlock 512
@@ -214,8 +214,8 @@ public:
 
 		CD_K = 1;
 		// lrate = 0.001;
-		lrate = 0.001 * M / train_data.size;
-		lrate_BH = lrate / BATCH_SIZE;
+		lrate = 0.15 * M / train_data.size;
+		lrate_BH = 1 * lrate / BATCH_SIZE;
 
 
 		// The even out on M is because of the bug on Nvidia Curand function
@@ -414,7 +414,7 @@ public:
 			cudaEventRecord(timer_stop, 0);
 			cudaEventSynchronize(timer_stop);
 			cudaEventElapsedTime(&milliseconds, timer_start, timer_stop);
-			cout << "time spent on predicting = " << milliseconds << "\t" << flush;
+			// cout << "time spent on predicting = " << milliseconds << "\t" << flush;
 			predict_timer += milliseconds;
 
 
@@ -517,7 +517,7 @@ public:
 			cudaEventRecord(timer_stop, 0);
 			cudaEventSynchronize(timer_stop);
 			cudaEventElapsedTime(&milliseconds, timer_start, timer_stop);
-			cout << "time spent on training = " << milliseconds << endl;
+			// cout << "time spent on training = " << milliseconds << endl;
 			train_timer	+= milliseconds;
 
 		}
@@ -667,7 +667,7 @@ public:
 
 int main(int argc, char** argv) {
 
-	unsigned int ITER_NUM = 5;
+	unsigned int ITER_NUM = 50;
 
 	string train_file_name = "data/mid_main.data";
 	string test_file_name = "data/mid_prob.data";

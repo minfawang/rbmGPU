@@ -2,7 +2,7 @@
 #define CUDA_RBM_CUH
 
 #define K 5
-#define F 100
+#define F 150
 
 // void train(int* users, int* movies, int* ratings, int* starts, int* sizes, 
 // 	float* A, float* B, float* B_old, float* BV, float* BH, int F, int C, float* lrate,
