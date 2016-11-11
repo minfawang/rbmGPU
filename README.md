@@ -1,13 +1,18 @@
 # RBM Report
 
-### Sumamary
+### Summary
 
 The project / repository is an implementation of restricted Boltzmann model (RBM) on GPU. Because of the low dependence among users, this model is, although not very easy to implement, highly parallelizable. I applied this algorithm on a part of the Netflix Challenge dataset. It helps cut the running time from the unit of minutes on CPU to the unit of seconds on GPU. 
-This is a solo project in 3 weeks long.
+
+This is a solo project in 3 weeks long.
 
 ### Background
 
-The RBM is essentially a one layer neural network with an extra biased unit. It uses a latent factor approach to represent items with a few hidden factors. Generally speaking, a RBM model will take a set of binary vectors as inputs, and then use a gradient descent based approach , and iteratively reveal the relationship between the factors and movies. Then based on the previous set of inputs, the model could predict the new inputs based on activated factors.Specifically, in the case of user movie-ratings, the movies will be the visible layer of the model, and their hidden factors will be things such as fantasy, Hollywood movie, horror, etc. Then the biases connecting to movies and factors could be interpreted as the inclinations that a movie will get a specific score and that a factor will be activated. The RBM is recently growing popular and has been proved to have great performance on predictions of user specific applications. However, this model is extremely computationally expensive. In the example of Netflix dataset, which contains around 10 million data points, we need a single RBM model for every user, and the training of each model requires lots of matrix multiplications with dimensions of a few thousand times a few hundred. It makes the implementation on large dataset prohibitively slow in the case of CPU. Fortunately, the training of each user is almost independent of each other. So by taking advantage of this characteristic, we could implement the model on GPU and get a performance boost.
+The RBM is essentially a one layer neural network with an extra biased unit. It uses a latent factor approach to represent items with a few hidden factors. Generally speaking, a RBM model will take a set of binary vectors as inputs, and then use a gradient descent based approach , and iteratively reveal the relationship between the factors and movies. Then based on the previous set of inputs, the model could predict the new inputs based on activated factors.
+
+Specifically, in the case of user movie-ratings, the movies will be the visible layer of the model, and their hidden factors will be things such as fantasy, Hollywood movie, horror, etc. Then the biases connecting to movies and factors could be interpreted as the inclinations that a movie will get a specific score and that a factor will be activated. 
+
+The RBM is recently growing popular and has been proved to have great performance on predictions of user specific applications. However, this model is extremely computationally expensive. In the example of Netflix dataset, which contains around 10 million data points, we need a single RBM model for every user, and the training of each model requires lots of matrix multiplications with dimensions of a few thousand times a few hundred. It makes the implementation on large dataset prohibitively slow in the case of CPU. Fortunately, the training of each user is almost independent of each other. So by taking advantage of this characteristic, we could implement the model on GPU and get a performance boost.
 
 
 ### Approach
