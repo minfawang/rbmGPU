@@ -13,9 +13,6 @@
 #include <omp.h>
 #include <ctime>
 
-// #include <armadillo>
-// #include <shark/Unsupervised/RBM/BinaryRBM.h>
-
 
 #ifndef __RBM_ESTIMATORS
 #define __RBM_ESTIMATORS
@@ -28,12 +25,6 @@
 
 
 using namespace std;
-// using namespace arma;
-
-
-// bool isFuckedUp(double num) {
-// 	return isnan(num) || isinf(num);
-// }
 
 
 double sigma(double num) {
@@ -390,7 +381,7 @@ public:
 		}
 
 
-			
+
 		// compute Ht
 		memcpy(Ht, BH, sizeof(float) * F);
 		for (int i = 0; i < size; i++) {
@@ -461,7 +452,7 @@ public:
 					int* movies_segment = train_vec[user_id];
 					int start = movies_segment[0];
 					int size = movies_segment[1];
-					
+
 					predict_user(user_id, train_array.data + start, size, predict_array.data + predict_start, predict_start, predict_size);
 					// cout << "train on " << user_id << " of size " << size << endl;
 				}
@@ -618,16 +609,6 @@ public:
 
 
 
-
-
-
-
-
-
-
-
-
-
 int main () {
 	string train_file_name = "data/mid_main.data";
 	string test_file_name = "data/mid_prob.data";
@@ -647,18 +628,9 @@ int main () {
 
 	cout << "finish loading " << train_file_name << endl;
 
-
-
-
-	RBM rbm(train_data, test_data, qual_data);
-
-
 	unsigned int NUM_ITERS = 5;
+	RBM rbm(train_data, test_data, qual_data);
 	rbm.fit(train_data, NUM_ITERS);
-
-
-
-
 
 	// vector<float>results = rbm.predict_list(test_data);
 	// cout << "RMSE: " << RMSE(test_data, results) << endl;
@@ -672,8 +644,6 @@ int main () {
 	// rbm_out_file.close();
 
 }
-
-
 
 
 
